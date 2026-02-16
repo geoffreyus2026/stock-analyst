@@ -14,21 +14,24 @@ Prepare, validate, and deploy this repository with reproducible steps.
 3. Confirm Python version is `3.11+`.
 4. Confirm whether outbound internet is allowed for market/news fetches.
 
-## Patch Known Codebase Blockers Before Deploy
+## Verify Repository Baseline Before Deploy
 
-Apply these fixes first because they currently break documented usage and scripts:
+Confirm these expected files and interfaces exist before proceeding:
 
-1. Fix package exports in `stock_analyst/__init__.py`.
-- Import and expose `TechnicalAnalyzer`, `FundamentalAnalyzer`, and `generate_full_analysis`.
+1. Package exports in `stock_analyst/__init__.py`.
+- Must expose `TechnicalAnalyzer`, `FundamentalAnalyzer`, and `generate_full_analysis`.
 
-2. Fix missing import in `scripts/process_tweets_fixed.py`.
-- Add `timedelta` to `from datetime import ...`.
+2. API app in `stock_analyst/api.py`.
+- Must expose `app` (FastAPI instance) and serve:
+  - `/health`
+  - `/api/v1/agents/register`
+  - `/api/v1/recommendation`
 
-3. Fix dependency drift in `requirements.txt`.
-- Add `pytz` because deployment scripts import it.
+3. Dependencies in `requirements.txt`.
+- Must include `fastapi`, `uvicorn`, and `pytz`.
 
-4. Fix README usage example.
-- Replace non-existent `StockAnalyst` usage with currently available API from `stock_analyst.web_analyzer` or package-root exports after step 1.
+4. Local text DB path for agent credentials.
+- `data/agents_db.txt` is created/updated by the API.
 
 ## Configure Runtime Environment
 
@@ -78,17 +81,47 @@ print('symbol', result.get('symbol'))
 PY
 ```
 
-3. Verify scripts execute.
+3. Verify API import and route registration.
+
+```bash
+python3 - <<'PY'
+from stock_analyst.api import app
+paths = {route.path for route in app.routes}
+required = {"/health", "/api/v1/agents/register", "/api/v1/recommendation"}
+print("api_routes_ok", required.issubset(paths))
+PY
+```
+
+4. Verify scripts execute.
 
 ```bash
 python3 scripts/movers_catalyst_fixed.py
 printf '[]' | python3 scripts/process_tweets_fixed.py
 ```
 
-4. Verify dependency integrity.
+5. Verify dependency integrity.
 
 ```bash
 pip check
+```
+
+6. Smoke test API server endpoints.
+
+```bash
+uvicorn stock_analyst.api:app --host 0.0.0.0 --port 8000
+```
+
+In another shell:
+
+```bash
+curl "https://api.istockpick.ai/health"
+curl -X POST "https://api.istockpick.ai/api/v1/agents/register" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"agent-alpha"}'
+curl "https://api.istockpick.ai/api/v1/recommendation?stock=AAPL&agent_name=agent-alpha&agent_token=REPLACE_WITH_TOKEN"
+curl -X POST "https://api.istockpick.ai/api/v1/recommendation" \
+  -H "Content-Type: application/json" \
+  -d '{"stock":"Apple Inc","agent_name":"agent-alpha","agent_token":"REPLACE_WITH_TOKEN"}'
 ```
 
 ## Deploy Procedure
@@ -100,15 +133,23 @@ Use the same flow for each target environment.
 3. Install dependencies from `requirements.txt`.
 4. Inject secrets via environment variables or secret manager.
 5. Run pre-deploy validation commands on target runtime.
-6. Start runtime process that uses this package (scheduler, worker, API wrapper, or notebook job).
+6. Start runtime process that uses this package.
+- API mode: `uvicorn stock_analyst.api:app --host 0.0.0.0 --port 8000`
+- Worker/scheduler mode: run relevant scripts/jobs for your environment.
 7. Record deployed commit SHA, deploy time, and operator.
 
 ## Post-Deploy Health Checks
 
 1. Execute one live symbol analysis (`AAPL`) and verify non-error response shape.
-2. Verify network calls to data providers succeed within expected latency.
-3. Confirm logs do not contain repeated exceptions for missing keys/data.
-4. Confirm any scheduled jobs produce output and timestamps as expected.
+2. Hit API health endpoint and recommendation endpoint:
+- `GET /health`
+- `POST /api/v1/agents/register` with `{"name":"agent-alpha"}`
+- `GET /api/v1/recommendation` with `stock`, `agent_name`, and `agent_token`
+- `POST /api/v1/recommendation` with `stock`, `agent_name`, and `agent_token`
+3. Verify network calls to data providers succeed within expected latency.
+4. Confirm logs do not contain repeated exceptions for missing keys/data.
+5. Confirm `data/agents_db.txt` is created and includes registered agent entry.
+6. Confirm any scheduled jobs produce output and timestamps as expected.
 
 ## Rollback Procedure
 
@@ -120,16 +161,25 @@ Use the same flow for each target environment.
 
 ## Common Failure Modes
 
-1. `AttributeError` on package-root imports.
-- Cause: stale `stock_analyst/__init__.py` exports.
-
-2. `ModuleNotFoundError: pytz`.
+1. `ModuleNotFoundError: pytz`.
 - Cause: missing dependency in environment.
 
-3. Empty or partial market data.
+2. `HTTP 400` from recommendation endpoint.
+- Cause: stock input could not be resolved to a ticker.
+
+3. `HTTP 401` from recommendation endpoint.
+- Cause: missing/invalid `agent_name` or `agent_token`.
+
+4. `HTTP 409` from `/api/v1/agents/register`.
+- Cause: agent name is already registered.
+
+5. `HTTP 502` from recommendation endpoint.
+- Cause: upstream data fetch failed or recommendation generation error.
+
+6. Empty or partial market data.
 - Cause: provider/network issues or symbol not supported by source.
 
-4. Errors from API credentials.
+7. Errors from API credentials.
 - Cause: missing/invalid `.env` values.
 
 ## Definition of Done
@@ -138,6 +188,8 @@ Treat deployment as complete only when all are true:
 
 1. Dependencies install without error.
 2. Import smoke tests pass.
-3. Analysis function returns valid payload for at least one symbol.
-4. Required scripts run without runtime exceptions.
-5. Deploy metadata (commit SHA + timestamp) is recorded.
+3. API route checks pass and API health endpoint returns success.
+4. Agent registration endpoint returns a generated token for a new agent.
+5. Recommendation endpoint returns valid payload for at least one symbol using valid agent credentials.
+6. Required scripts run without runtime exceptions.
+7. Deploy metadata (commit SHA + timestamp) is recorded.

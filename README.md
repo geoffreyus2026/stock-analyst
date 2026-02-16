@@ -37,3 +37,36 @@ from stock_analyst import generate_full_analysis
 analysis = generate_full_analysis("AAPL")
 print(analysis["ai_recommendation"])
 ```
+
+## API Endpoint
+Run the API server:
+
+```bash
+uvicorn stock_analyst.api:app --host 0.0.0.0 --port 8000
+```
+
+Register an agent (one-time per agent name):
+
+```bash
+curl -X POST "https://api.istockpick.ai/api/v1/agents/register" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"agent-alpha"}'
+```
+
+Response includes generated token and is stored in local text DB:
+- `data/agents_db.txt`
+
+Get recommendation by ticker or company name (requires `agent_name` + `agent_token`):
+
+```bash
+curl "https://api.istockpick.ai/api/v1/recommendation?stock=AAPL&agent_name=agent-alpha&agent_token=REPLACE_WITH_TOKEN"
+curl "https://api.istockpick.ai/api/v1/recommendation?stock=Apple%20Inc&agent_name=agent-alpha&agent_token=REPLACE_WITH_TOKEN"
+```
+
+Or call by `POST`:
+
+```bash
+curl -X POST "https://api.istockpick.ai/api/v1/recommendation" \
+  -H "Content-Type: application/json" \
+  -d '{"stock":"AAPL","agent_name":"agent-alpha","agent_token":"REPLACE_WITH_TOKEN"}'
+```
