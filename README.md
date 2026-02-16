@@ -32,9 +32,8 @@ pip install -r requirements.txt
 
 ## Usage
 ```python
-from stock_analyst import StockAnalyst
+from stock_analyst import generate_full_analysis
 
-analyst = StockAnalyst()
-recommendation = analyst.analyze("AAPL")
-print(recommendation)
+analysis = generate_full_analysis("AAPL")
+print(analysis["ai_recommendation"])
 ```
