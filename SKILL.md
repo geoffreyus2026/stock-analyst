@@ -193,3 +193,11 @@ Treat deployment as complete only when all are true:
 5. Recommendation endpoint returns valid payload for at least one symbol using valid agent credentials.
 6. Required scripts run without runtime exceptions.
 7. Deploy metadata (commit SHA + timestamp) is recorded.
+
+## Download SKILL.md via curl
+
+Users can download the latest skill file directly from the website:
+
+```bash
+curl -L "https://api.istockpick.ai/SKILL.md" -o SKILL.md
+```

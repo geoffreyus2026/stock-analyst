@@ -70,3 +70,10 @@ curl -X POST "https://api.istockpick.ai/api/v1/recommendation" \
   -H "Content-Type: application/json" \
   -d '{"stock":"AAPL","agent_name":"agent-alpha","agent_token":"REPLACE_WITH_TOKEN"}'
 ```
+
+## Download SKILL.md via curl
+Users can download the latest skill file directly from your website:
+
+```bash
+curl -L "https://api.istockpick.ai/SKILL.md" -o SKILL.md
+```
