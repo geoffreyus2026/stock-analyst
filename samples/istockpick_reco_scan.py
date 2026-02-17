@@ -6,6 +6,7 @@ return symbols matching a target recommendation action.
 Example:
   python3 istockpick_reco_scan.py --rec sell --agent Geoffrey_US --token YOUR_TOKEN
   python3 istockpick_reco_scan.py --rec buy --agent Geoffrey_US --token YOUR_TOKEN --limit 50 --output buys.json
+  python3 istockpick_reco_scan.py --rec hold --agent Geoffrey_US --token YOUR_TOKEN --list AAPL,MSFT,NVDA
 """
 
 import argparse
@@ -46,19 +47,33 @@ def call_reco(symbol: str, agent_name: str, agent_token: str, timeout: int) -> d
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Scan S&P 500 recommendations from iStockPick")
-    parser.add_argument("--rec", required=True, choices=["buy", "hold", "sell"], help="Recommendation to filter")
+    parser.add_argument(
+        "--rec",
+        required=False,
+        default="",
+        choices=["", "buy", "hold", "sell"],
+        help="Recommendation to filter (optional). If omitted, returns BUY/HOLD/SELL all together.",
+    )
     parser.add_argument("--agent", required=True, help="Registered agent name")
     parser.add_argument("--token", required=True, help="Registered agent token")
     parser.add_argument("--limit", type=int, default=0, help="Optional number of symbols to scan (0 = all)")
+    parser.add_argument(
+        "--list",
+        default="",
+        help="Comma-separated tickers to scan instead of full S&P 500 list (e.g. AAPL,MSFT,NVDA)",
+    )
     parser.add_argument("--workers", type=int, default=12, help="Parallel requests")
     parser.add_argument("--timeout", type=int, default=15, help="Per-request timeout seconds")
     parser.add_argument("--output", default="", help="Optional output JSON path")
     args = parser.parse_args()
 
     target = args.rec.upper()
-    symbols = fetch_sp500_symbols()
-    if args.limit and args.limit > 0:
-        symbols = symbols[: args.limit]
+    if args.list.strip():
+        symbols = [s.strip().upper().replace('.', '-') for s in args.list.split(',') if s.strip()]
+    else:
+        symbols = fetch_sp500_symbols()
+        if args.limit and args.limit > 0:
+            symbols = symbols[: args.limit]
 
     matches = []
     errors = []
@@ -76,7 +91,7 @@ def main() -> int:
                 rec = ((payload.get("recommendation") or {}).get("action") or "").upper()
                 conf = (payload.get("recommendation") or {}).get("confidence")
                 ok += 1
-                if rec == target:
+                if (target and rec == target) or (not target and rec in {"BUY", "HOLD", "SELL"}):
                     matches.append(
                         {
                             "symbol": payload.get("resolved_symbol") or sym,
@@ -93,21 +108,36 @@ def main() -> int:
             if i % 50 == 0:
                 print(f"progress {i}/{len(symbols)} ok={ok} match={len(matches)} err={len(errors)}", flush=True)
 
-    matches.sort(key=lambda x: (x["confidence"] is None, -(x["confidence"] or 0), x["symbol"]))
+    matches.sort(key=lambda x: (x["action"], x["confidence"] is None, -(x["confidence"] or 0), x["symbol"]))
+
+    by_action = {"BUY": [], "HOLD": [], "SELL": []}
+    for item in matches:
+        by_action.setdefault(item["action"], []).append(item)
 
     result = {
-        "target": target,
+        "target": target or "ALL",
         "scanned": len(symbols),
         "ok": ok,
         "errors": len(errors),
         "matches": matches,
+        "by_action": by_action,
         "error_details": errors,
     }
 
     print(json.dumps({k: result[k] for k in ["target", "scanned", "ok", "errors"]}, indent=2))
-    print(f"\n{target} symbols ({len(matches)}):")
-    for item in matches:
-        print(f"- {item['symbol']} (confidence={item['confidence']})")
+
+    if target:
+        print(f"\n{target} symbols ({len(matches)}):")
+        for item in matches:
+            print(f"- {item['symbol']} (confidence={item['confidence']})")
+    else:
+        print("\nBUY/HOLD/SELL summary:")
+        for action in ["BUY", "HOLD", "SELL"]:
+            items = by_action.get(action, [])
+            print(f"- {action}: {len(items)}")
+            if action in {"BUY", "SELL"} and items:
+                symbols = ", ".join(i["symbol"] for i in items)
+                print(f"  symbols: {symbols}")
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
