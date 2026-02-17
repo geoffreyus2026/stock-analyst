@@ -77,3 +77,44 @@ Users can download the latest skill file directly from your website:
 ```bash
 curl -L "https://api.istockpick.ai/SKILL.md" -o SKILL.md
 ```
+
+## Deploy API To api.istockpick.ai
+This repo includes production templates:
+- `deploy/systemd/stock-analyst-api.service`
+- `deploy/nginx/api.istockpick.ai.conf`
+
+On your server:
+
+```bash
+cd /opt
+git clone git@github.com:geoffreyus2026/stock-analyst.git
+cd stock-analyst
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Create `/opt/stock-analyst/.env` with required keys, then:
+
+```bash
+sudo cp deploy/systemd/stock-analyst-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now stock-analyst-api
+sudo systemctl status stock-analyst-api
+```
+
+Configure nginx:
+
+```bash
+sudo cp deploy/nginx/api.istockpick.ai.conf /etc/nginx/sites-available/api.istockpick.ai.conf
+sudo ln -s /etc/nginx/sites-available/api.istockpick.ai.conf /etc/nginx/sites-enabled/api.istockpick.ai.conf
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Then verify:
+
+```bash
+curl "https://api.istockpick.ai/health"
+curl -X POST "https://api.istockpick.ai/api/v1/agents/register" -H "Content-Type: application/json" -d '{"name":"agent-alpha"}'
+```
